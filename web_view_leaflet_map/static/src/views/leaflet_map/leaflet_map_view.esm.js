@@ -36,7 +36,8 @@ export const leafletMapView = {
     multiRecord: true,
     Controller: MapController,
     Renderer: MapRenderer,
-    searchMenuTypes: ["filter", "favorite"],
+    searchMenuTypes: ["filter", "groupBy", "favorite", "comparison"],
+    display: {controlPanel: true},
 
     props: (genericProps) => {
         const archEl = normalizeArch(genericProps.arch);

@@ -3,7 +3,7 @@ import {useService} from "@web/core/utils/hooks";
 
 /* global L, console, document */
 
-const {Component, onWillStart, onMounted, onPatched, useRef, useState} = owl;
+const {Component, onWillStart, onMounted, onPatched, useEffect, useRef, useState} = owl;
 
 export class MapRenderer extends Component {
     static template = "web_view_leaflet_map.MapRenderer";
@@ -52,6 +52,7 @@ export class MapRenderer extends Component {
         this.mainLayer = null;
         this.records = [];
         this.markersById = {};
+        this.geolocatedOnce = false;
 
         onWillStart(async () => {
             await this.initDefaultPosition();
@@ -69,6 +70,18 @@ export class MapRenderer extends Component {
                 this.renderMarkers();
             }
         });
+
+        useEffect(
+            () => {
+                this.loadRecords().then(() => {
+                    this.renderMarkers();
+                    if (!this.geolocatedOnce) {
+                        this.maybeGeolocate();
+                    }
+                });
+            },
+            () => [this.props.domain, this.props.limit]
+        );
     }
 
     /**
@@ -87,6 +100,9 @@ export class MapRenderer extends Component {
             return;
         }
         this.state.locating = true;
+        this.geolocatedOnce = true;
+        // Give OWL a tick to render the banner before the blocking RPC.
+        await new Promise((resolve) => setTimeout(resolve, 0));
         try {
             await this.orm.call(
                 "base.geocoder",
