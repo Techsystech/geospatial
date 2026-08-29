@@ -3,7 +3,7 @@ import {useService} from "@web/core/utils/hooks";
 
 /* global L, console, document */
 
-const {Component, onWillStart, onMounted, onPatched, useRef} = owl;
+const {Component, onWillStart, onMounted, onPatched, useRef, useState} = owl;
 
 export class MapRenderer extends Component {
     static template = "web_view_leaflet_map.MapRenderer";
@@ -33,6 +33,13 @@ export class MapRenderer extends Component {
         this.fieldAddress = archAttrs.field_address?.value;
         this.fieldDescription = archAttrs.field_description?.value;
         this.fieldMarkerIconImage = archAttrs.field_marker_icon_image?.value;
+        this.fieldListTitle = archAttrs.field_list_title?.value || this.fieldTitle;
+        this.showList = archAttrs.show_list?.value === "true";
+        this.autoGeolocate = archAttrs.auto_geolocate?.value !== "false";
+
+        this.state = useState({
+            locating: false,
+        });
 
         this.markerIconSizeX = parseInt(archAttrs.marker_icon_size_x?.value, 10) || 64;
         this.markerIconSizeY = parseInt(archAttrs.marker_icon_size_y?.value, 10) || 64;
@@ -43,6 +50,8 @@ export class MapRenderer extends Component {
 
         this.leafletMap = null;
         this.mainLayer = null;
+        this.records = [];
+        this.markersById = {};
 
         onWillStart(async () => {
             await this.initDefaultPosition();
@@ -52,6 +61,7 @@ export class MapRenderer extends Component {
         onMounted(() => {
             this.initMap();
             this.renderMarkers();
+            this.maybeGeolocate();
         });
 
         onPatched(() => {
@@ -59,6 +69,71 @@ export class MapRenderer extends Component {
                 this.renderMarkers();
             }
         });
+    }
+
+    /**
+     * On first open, geolocate records missing coordinates, then reload them.
+     * Shows the "Locating new addresses..." banner while working.
+     * @returns {Promise<void>}
+     */
+    async maybeGeolocate() {
+        if (!this.autoGeolocate || !this.fieldLatitude || !this.fieldLongitude) {
+            return;
+        }
+        const missing = (this.records || []).filter(
+            (r) => !r[this.fieldLatitude] || !r[this.fieldLongitude]
+        );
+        if (!missing.length) {
+            return;
+        }
+        this.state.locating = true;
+        try {
+            await this.orm.call(
+                "base.geocoder",
+                "leaflet_geolocate_missing",
+                [
+                    this.resModel,
+                    this.props.domain || [],
+                    this.fieldLatitude,
+                    this.fieldLongitude,
+                ],
+                {limit: this.props.limit || 80}
+            );
+            await this.loadRecords();
+            this.renderMarkers();
+        } catch (error) {
+            console.error("Error geolocating records:", error);
+        } finally {
+            this.state.locating = false;
+        }
+    }
+
+    /**
+     * Pan/zoom the map to a record and open its popup (used from the side list).
+     * @param {Object} record - The clicked record
+     */
+    focusRecord(record) {
+        if (!this.leafletMap) {
+            return;
+        }
+        const lat = record[this.fieldLatitude];
+        const lng = record[this.fieldLongitude];
+        if (!lat || !lng) {
+            return;
+        }
+        const latlng = L.latLng(lat, lng);
+        this.leafletMap.setView(latlng, Math.max(this.leafletMap.getZoom(), 14), {
+            animate: true,
+        });
+        const marker = this.markersById[record.id];
+        if (marker) {
+            // If inside a cluster, reveal it before opening the popup.
+            if (this.mainLayer && this.mainLayer.zoomToShowLayer) {
+                this.mainLayer.zoomToShowLayer(marker, () => marker.openPopup());
+            } else {
+                marker.openPopup();
+            }
+        }
     }
 
     /**
@@ -156,19 +231,21 @@ export class MapRenderer extends Component {
         }
 
         this.mainLayer = L.markerClusterGroup();
+        this.markersById = {};
         for (const record of this.records) {
             const marker = this.prepareMarker(record);
             if (marker) {
                 this.mainLayer.addLayer(marker);
+                this.markersById[record.id] = marker;
             }
         }
+        this.leafletMap.addLayer(this.mainLayer);
+
         const bounds = this.mainLayer.getBounds();
         if (bounds.isValid()) {
             // Adapt the map's position based on the map's points
             this.leafletMap.fitBounds(bounds.pad(0.1));
         }
-
-        this.leafletMap.addLayer(this.mainLayer);
     }
 
     /**

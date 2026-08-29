@@ -2,12 +2,31 @@
     Custom CSS for the elements introduced by web_view_leaflet_map module
 */
 
+.o_leaflet_wrapper {
+    height: 100%;
+    width: 100%;
+}
+
 .o_leaflet_main_container {
     display: flex;
     align-content: stretch;
-    overflow-x: visible;
-    height: 100%;
+    overflow: hidden;
     width: 100%;
+}
+
+.o_leaflet_list {
+    width: 280px;
+    min-width: 280px;
+    background: #fff;
+    overflow-y: auto;
+}
+
+.o_leaflet_list_item {
+    cursor: pointer;
+}
+
+.o_leaflet_list_item:hover {
+    background-color: #f0f0f0;
 }
 
 .o_leaflet_map_container {
