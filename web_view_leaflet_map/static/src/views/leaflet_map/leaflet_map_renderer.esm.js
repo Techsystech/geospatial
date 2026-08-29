@@ -31,6 +31,7 @@ export class MapRenderer extends Component {
         this.fieldLongitude = archAttrs.field_longitude?.value;
         this.fieldTitle = archAttrs.field_title?.value;
         this.fieldAddress = archAttrs.field_address?.value;
+        this.fieldDescription = archAttrs.field_description?.value;
         this.fieldMarkerIconImage = archAttrs.field_marker_icon_image?.value;
 
         this.markerIconSizeX = parseInt(archAttrs.marker_icon_size_x?.value, 10) || 64;
@@ -95,13 +96,14 @@ export class MapRenderer extends Component {
         // Required fields
         fields.add("id");
         fields.add("display_name");
-        fields.add("date_localization");
+        fields.add("write_date");
 
         // Optional fields based on arch attributes
         if (this.fieldLatitude) fields.add(this.fieldLatitude);
         if (this.fieldLongitude) fields.add(this.fieldLongitude);
         if (this.fieldTitle) fields.add(this.fieldTitle);
         if (this.fieldAddress) fields.add(this.fieldAddress);
+        if (this.fieldDescription) fields.add(this.fieldDescription);
         if (this.fieldMarkerIconImage) fields.add(this.fieldMarkerIconImage);
 
         return Array.from(fields);
@@ -190,11 +192,12 @@ export class MapRenderer extends Component {
             marker = L.marker(latlng, markerOptions);
             const popup = L.popup().setContent(this.preparePopUpData(record));
 
-            marker.bindPopup(popup).on("popupopen", () => {
-                const selector = document.querySelector(".o_map_selector");
-                if (selector) {
-                    selector.addEventListener("click", (ev) => {
-                        ev.preventDefault();
+            marker.bindPopup(popup).on("popupopen", (ev) => {
+                const popupEl = ev.popup.getElement();
+                const openBtn = popupEl && popupEl.querySelector(".o_leaflet_open");
+                if (openBtn) {
+                    openBtn.addEventListener("click", (clickEv) => {
+                        clickEv.preventDefault();
                         this.onClickLeafletPopup(record);
                     });
                 }
@@ -210,7 +213,7 @@ export class MapRenderer extends Component {
      * @returns {*}
      */
     prepareMarkerIcon(record) {
-        const lastUpdate = record.date_localization || new Date().toISOString();
+        const lastUpdate = record.write_date || new Date().toISOString();
         const unique = lastUpdate.replace(/[^0-9]/g, "");
         const iconUrl = `/web/image?model=${this.resModel}&id=${record.id}&field=${this.fieldMarkerIconImage}&unique=${unique}`;
 
@@ -243,18 +246,42 @@ export class MapRenderer extends Component {
     }
 
     /**
+     * Escapes a plain text value for safe insertion into popup HTML.
+     * @param {*} text - The value to escape
+     * @returns {String}
+     */
+    escapeHtml(text) {
+        const div = document.createElement("div");
+        div.textContent = String(text);
+        return div.innerHTML;
+    }
+
+    /**
      * Prepares the HTML content for the leaflet popup.
      * @param {Object} record - The record object containing marker data
      * @returns {String}
      */
     preparePopUpData(record) {
         const title = record[this.fieldTitle] || "";
-        const address = record[this.fieldAddress] || "";
+        const address = (this.fieldAddress && record[this.fieldAddress]) || "";
+        const description =
+            (this.fieldDescription && record[this.fieldDescription]) || "";
 
         return `
-            <div class='o_map_selector' data-res-id='${record.resId}'>
-                <b>${title}</b><br/>
-                ${address ? ` - ${address}` : ""}
+            <div class="o_leaflet_popup">
+                <div><b>${this.escapeHtml(title)}</b></div>
+                ${address ? `<div>${this.escapeHtml(address)}</div>` : ""}
+                ${
+                    description
+                        ? `<div class="o_leaflet_popup_description"
+                            style="max-height: 150px; overflow-y: auto;"
+                        >${description}</div>`
+                        : ""
+                }
+                <button
+                    type="button"
+                    class="btn btn-primary btn-sm mt-2 o_leaflet_open"
+                >Open</button>
             </div>
         `;
     }

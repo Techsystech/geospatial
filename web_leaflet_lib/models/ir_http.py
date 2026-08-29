@@ -11,10 +11,19 @@ class Http(models.AbstractModel):
     def session_info(self):
         result = super().session_info()
         config = self.env["ir.config_parameter"].sudo()
+        tile_url = config.get_param("leaflet.tile_url", default="")
+        if not tile_url or tile_url == "False":
+            tile_url = "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+        copyright_notice = config.get_param("leaflet.copyright", default="")
+        if not copyright_notice or copyright_notice == "False":
+            copyright_notice = (
+                "&copy; <a href='http://www.openstreetmap.org/copyright'>"
+                "OpenStreetMap</a>"
+            )
         result.update(
             {
-                "leaflet.tile_url": config.get_param("leaflet.tile_url", default=""),
-                "leaflet.copyright": config.get_param("leaflet.copyright", default=""),
+                "leaflet.tile_url": tile_url,
+                "leaflet.copyright": copyright_notice,
             }
         )
         return result
