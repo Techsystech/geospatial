@@ -17,8 +17,8 @@ class BaseGeocoder(models.AbstractModel):
         Returns the count of successfully geolocated records.
         """
         Model = self.env[model_name]
-        fields = Model._fields
-        if lat_field not in fields or lng_field not in fields:
+        model_fields = Model._fields
+        if lat_field not in model_fields or lng_field not in model_fields:
             return 0
         records = Model.search(domain, limit=limit)
         count = 0
