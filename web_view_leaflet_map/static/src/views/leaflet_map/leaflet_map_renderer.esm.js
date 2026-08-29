@@ -294,6 +294,13 @@ export class MapRenderer extends Component {
                         this.onClickLeafletPopup(record);
                     });
                 }
+                const navigateBtn = popupEl && popupEl.querySelector(".o_leaflet_navigate");
+                if (navigateBtn) {
+                    navigateBtn.addEventListener("click", (clickEv) => {
+                        clickEv.preventDefault();
+                        this.onClickLeafletNavigate(record);
+                    });
+                }
             });
 
             return marker;
@@ -371,10 +378,16 @@ export class MapRenderer extends Component {
                         >${description}</div>`
                         : ""
                 }
-                <button
-                    type="button"
-                    class="btn btn-primary btn-sm mt-2 o_leaflet_open"
-                >Open</button>
+                <div class="d-flex gap-2 mt-2">
+                    <button
+                        type="button"
+                        class="btn btn-primary btn-sm o_leaflet_open"
+                    >Open</button>
+                    <button
+                        type="button"
+                        class="btn btn-secondary btn-sm o_leaflet_navigate"
+                    >Navigate to</button>
+                </div>
             </div>
         `;
     }
@@ -391,5 +404,25 @@ export class MapRenderer extends Component {
             views: [[false, "form"]],
             target: "current",
         });
+    }
+
+    /**
+     * Builds a Google Maps directions URL for the record's address.
+     * @param {Object} record - The record object containing marker data
+     * @returns {String}
+     */
+    buildNavigationUrl(record) {
+        const address = (this.fieldAddress && record[this.fieldAddress]) || "";
+        const destination = encodeURIComponent(String(address).trim());
+        return `https://www.google.com/maps/dir/?api=1&destination=${destination}`;
+    }
+
+    /**
+     * Opens Google Maps directions in a new tab for the record address.
+     * @param {Object} record - The record object containing marker data
+     */
+    onClickLeafletNavigate(record) {
+        const url = this.buildNavigationUrl(record);
+        window.open(url, "_blank", "noopener,noreferrer");
     }
 }
