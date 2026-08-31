@@ -39,6 +39,7 @@ export class MapRenderer extends Component {
         this.showList = archAttrs.show_list?.value === "true";
         const listDraggableAttr = archAttrs.list_draggable?.value;
         this.listDraggable = this.showList && (listDraggableAttr === undefined || listDraggableAttr !== "false");
+        this.autoGeolocate = archAttrs.auto_geolocate?.value !== "false";
 
         this.state = useState({
             locating: false,
