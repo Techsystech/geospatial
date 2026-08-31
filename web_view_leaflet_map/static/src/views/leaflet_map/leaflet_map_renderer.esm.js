@@ -42,6 +42,7 @@ export class MapRenderer extends Component {
 
         this.state = useState({
             locating: false,
+            records: [],
         });
 
         this.markerIconSizeX = parseInt(archAttrs.marker_icon_size_x?.value, 10) || 64;
@@ -53,7 +54,6 @@ export class MapRenderer extends Component {
 
         this.leafletMap = null;
         this.mainLayer = null;
-        this.records = [];
         this.markersById = {};
         this.geolocatedOnce = false;
         this.listRef = useRef("listContainer");
@@ -93,7 +93,6 @@ export class MapRenderer extends Component {
         useEffect(
             () => {
                 this.loadRecords().then(() => {
-                    this.renderMarkers();
                     if (!this.geolocatedOnce) {
                         this.maybeGeolocate();
                     }
@@ -112,7 +111,7 @@ export class MapRenderer extends Component {
         if (!this.autoGeolocate || !this.fieldLatitude || !this.fieldLongitude) {
             return;
         }
-        const missing = (this.records || []).filter(
+        const missing = (this.state.records || []).filter(
             (r) => !r[this.fieldLatitude] || !r[this.fieldLongitude]
         );
         if (!missing.length) {
@@ -135,7 +134,6 @@ export class MapRenderer extends Component {
                 {limit: this.props.limit || 80}
             );
             await this.loadRecords();
-            this.renderMarkers();
         } catch (error) {
             console.error("Error geolocating records:", error);
         } finally {
@@ -177,19 +175,19 @@ export class MapRenderer extends Component {
      * @param {Number|null} refId - The id of the record after which it was dropped.
      */
     reorderRecords(movedId, refId) {
-        const fromIndex = this.records.findIndex((r) => r.id === movedId);
+        const records = this.state.records;
+        const fromIndex = records.findIndex((r) => r.id === movedId);
         if (fromIndex === -1) {
             return;
         }
-        const movedRecord = this.records[fromIndex];
-        this.records.splice(fromIndex, 1);
+        const movedRecord = records[fromIndex];
+        records.splice(fromIndex, 1);
         let toIndex = 0;
         if (refId) {
-            const refIndex = this.records.findIndex((r) => r.id === refId);
-            toIndex = refIndex === -1 ? this.records.length : refIndex + 1;
+            const refIndex = records.findIndex((r) => r.id === refId);
+            toIndex = refIndex === -1 ? records.length : refIndex + 1;
         }
-        this.records.splice(toIndex, 0, movedRecord);
-        this.renderMarkers();
+        records.splice(toIndex, 0, movedRecord);
     }
 
     /**
@@ -210,10 +208,10 @@ export class MapRenderer extends Component {
                     context: this.props.context || {},
                 }
             );
-            this.records = records;
+            this.state.records = records;
         } catch (error) {
             console.error("Error loading records:", error);
-            this.records = [];
+            this.state.records = [];
         }
     }
 
@@ -289,7 +287,7 @@ export class MapRenderer extends Component {
 
         this.mainLayer = L.markerClusterGroup();
         this.markersById = {};
-        for (const record of this.records) {
+        for (const record of this.state.records) {
             const marker = this.prepareMarker(record);
             if (marker) {
                 this.mainLayer.addLayer(marker);
@@ -467,10 +465,10 @@ export class MapRenderer extends Component {
      * @returns {String|null}
      */
     buildAllNavigationUrl() {
-        if (!this.fieldAddress || !this.records.length) {
-            return null;
+        if (!this.fieldAddress || !this.state.records.length) {
+            return false;
         }
-        const addresses = this.records
+        const addresses = this.state.records
             .map((r) => String(r[this.fieldAddress] || "").trim())
             .filter((a) => a);
         if (!addresses.length) {

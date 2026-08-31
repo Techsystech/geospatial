@@ -16,7 +16,7 @@
                     class="o_leaflet_list border-end overflow-hidden d-flex flex-column"
                 >
                     <div
-                        t-if="records.length and fieldAddress"
+                        t-if="state.records.length and fieldAddress"
                         class="p-2 border-bottom bg-light"
                     >
                         <button
@@ -29,7 +29,7 @@
                     </div>
                     <div t-ref="listContainer" class="overflow-auto flex-grow-1">
                         <div
-                            t-foreach="records"
+                            t-foreach="state.records"
                             t-as="record"
                             t-key="record.id"
                             class="o_leaflet_list_item p-2 border-bottom"
@@ -54,7 +54,7 @@
                             </div>
                         </div>
                         <div
-                            t-if="!records.length"
+                            t-if="!state.records.length"
                             class="text-muted p-3 small"
                         >No records to display.</div>
                     </div>

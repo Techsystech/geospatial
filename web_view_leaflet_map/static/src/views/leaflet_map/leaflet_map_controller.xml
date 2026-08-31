@@ -16,6 +16,10 @@
                     </button>
                 </t>
 
+                <t t-set-slot="layout-actions">
+                    <SearchBar toggler="searchBarToggler" />
+                </t>
+
                 <MapRenderer t-props="props" />
             </Layout>
         </div>
