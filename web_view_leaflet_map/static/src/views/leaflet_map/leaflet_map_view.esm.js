@@ -32,7 +32,7 @@ function normalizeArch(arch) {
 export const leafletMapView = {
     type: "leaflet_map",
     display_name: "Map",
-    icon: "fa fa-map-o",
+    icon: "fa fa-map-marker",
     multiRecord: true,
     Controller: MapController,
     Renderer: MapRenderer,

@@ -32,6 +32,7 @@ export class MapRenderer extends Component {
         this.fieldTitle = archAttrs.field_title?.value;
         this.fieldAddress = archAttrs.field_address?.value;
         this.fieldDescription = archAttrs.field_description?.value;
+        this.fieldCustomer = archAttrs.field_customer?.value;
         this.fieldMarkerIconImage = archAttrs.field_marker_icon_image?.value;
         this.fieldListTitle = archAttrs.field_list_title?.value || this.fieldTitle;
         this.showList = archAttrs.show_list?.value === "true";
@@ -195,6 +196,7 @@ export class MapRenderer extends Component {
         if (this.fieldTitle) fields.add(this.fieldTitle);
         if (this.fieldAddress) fields.add(this.fieldAddress);
         if (this.fieldDescription) fields.add(this.fieldDescription);
+        if (this.fieldCustomer) fields.add(this.fieldCustomer);
         if (this.fieldMarkerIconImage) fields.add(this.fieldMarkerIconImage);
 
         return Array.from(fields);
@@ -364,12 +366,15 @@ export class MapRenderer extends Component {
     preparePopUpData(record) {
         const title = record[this.fieldTitle] || "";
         const address = (this.fieldAddress && record[this.fieldAddress]) || "";
+        const customer =
+            (this.fieldCustomer && record[this.fieldCustomer]) || "";
         const description =
             (this.fieldDescription && record[this.fieldDescription]) || "";
 
         return `
             <div class="o_leaflet_popup">
                 <div><b>${this.escapeHtml(title)}</b></div>
+                ${customer ? `<div>${this.escapeHtml(customer)}</div>` : ""}
                 ${address ? `<div>${this.escapeHtml(address)}</div>` : ""}
                 ${
                     description
