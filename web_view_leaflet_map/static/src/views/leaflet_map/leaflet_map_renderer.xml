@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<templates xml:space="preserve">
+
+    <t t-name="web_view_leaflet_map.MapRenderer" owl="1">
+        <div class="o_leaflet_wrapper h-100 d-flex flex-column" t-ref="root">
+            <div
+                t-if="state.locating"
+                class="alert alert-info text-center mb-0 rounded-0 py-2"
+                role="status"
+            >
+                <i class="fa fa-spin fa-circle-o-notch me-2" />Locating new addresses...
+            </div>
+            <div class="o_leaflet_main_container d-flex flex-grow-1 overflow-hidden">
+                <div
+                    t-if="showList"
+                    class="o_leaflet_list border-end overflow-auto"
+                >
+                    <div
+                        t-foreach="records"
+                        t-as="record"
+                        t-key="record.id"
+                        class="o_leaflet_list_item p-2 border-bottom"
+                        t-on-click="() => this.focusRecord(record)"
+                    >
+                        <div class="fw-bold" t-esc="record[fieldListTitle] || record.display_name" />
+                        <div
+                            t-if="fieldAddress and record[fieldAddress]"
+                            class="text-muted small"
+                            t-esc="record[fieldAddress]"
+                        />
+                    </div>
+                    <div
+                        t-if="!records.length"
+                        class="text-muted p-3 small"
+                    >No records to display.</div>
+                </div>
+                <div t-ref="mapContainer" class="o_leaflet_map_container flex-grow-1 h-100" />
+            </div>
+        </div>
+    </t>
+
+</templates>

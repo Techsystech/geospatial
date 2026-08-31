@@ -1,0 +1,428 @@
+import {session} from "@web/session";
+import {useService} from "@web/core/utils/hooks";
+
+/* global L, console, document */
+
+const {Component, onWillStart, onMounted, onPatched, useEffect, useRef, useState} = owl;
+
+export class MapRenderer extends Component {
+    static template = "web_view_leaflet_map.MapRenderer";
+    static components = {};
+
+    /**
+     * Initializes the MapRenderer component, setting up services, references, and configuration.
+     */
+    // eslint-disable-next-line complexity
+    setup() {
+        this.orm = useService("orm");
+        this.action = useService("action");
+        this.mapRef = useRef("mapContainer");
+        this.leafletTileUrl = session["leaflet.tile_url"];
+        this.leafletCopyright = session["leaflet.copyright"];
+
+        const archAttrs = this.props.archInfo.arch.attributes;
+
+        this.resModel = this.props.resModel;
+        this.defaultZoom = parseInt(archAttrs.default_zoom, 10) || 7;
+        this.maxZoom = parseInt(archAttrs.max_zoom, 10) || 19;
+        this.zoomSnap = parseInt(archAttrs.zoom_snap, 10) || 1;
+
+        this.fieldLatitude = archAttrs.field_latitude?.value;
+        this.fieldLongitude = archAttrs.field_longitude?.value;
+        this.fieldTitle = archAttrs.field_title?.value;
+        this.fieldAddress = archAttrs.field_address?.value;
+        this.fieldDescription = archAttrs.field_description?.value;
+        this.fieldMarkerIconImage = archAttrs.field_marker_icon_image?.value;
+        this.fieldListTitle = archAttrs.field_list_title?.value || this.fieldTitle;
+        this.showList = archAttrs.show_list?.value === "true";
+        this.autoGeolocate = archAttrs.auto_geolocate?.value !== "false";
+
+        this.state = useState({
+            locating: false,
+        });
+
+        this.markerIconSizeX = parseInt(archAttrs.marker_icon_size_x?.value, 10) || 64;
+        this.markerIconSizeY = parseInt(archAttrs.marker_icon_size_y?.value, 10) || 64;
+        this.markerPopupAnchorX =
+            parseInt(archAttrs.marker_popup_anchor_x?.value, 10) || 0;
+        this.markerPopupAnchorY =
+            parseInt(archAttrs.marker_popup_anchor_y?.value, 10) || -32;
+
+        this.leafletMap = null;
+        this.mainLayer = null;
+        this.records = [];
+        this.markersById = {};
+        this.geolocatedOnce = false;
+
+        onWillStart(async () => {
+            await this.initDefaultPosition();
+            await this.loadRecords();
+        });
+
+        onMounted(() => {
+            this.initMap();
+            this.renderMarkers();
+            this.maybeGeolocate();
+        });
+
+        onPatched(() => {
+            if (this.leafletMap) {
+                this.renderMarkers();
+            }
+        });
+
+        useEffect(
+            () => {
+                this.loadRecords().then(() => {
+                    this.renderMarkers();
+                    if (!this.geolocatedOnce) {
+                        this.maybeGeolocate();
+                    }
+                });
+            },
+            () => [this.props.domain, this.props.limit]
+        );
+    }
+
+    /**
+     * On first open, geolocate records missing coordinates, then reload them.
+     * Shows the "Locating new addresses..." banner while working.
+     * @returns {Promise<void>}
+     */
+    async maybeGeolocate() {
+        if (!this.autoGeolocate || !this.fieldLatitude || !this.fieldLongitude) {
+            return;
+        }
+        const missing = (this.records || []).filter(
+            (r) => !r[this.fieldLatitude] || !r[this.fieldLongitude]
+        );
+        if (!missing.length) {
+            return;
+        }
+        this.state.locating = true;
+        this.geolocatedOnce = true;
+        // Give OWL a tick to render the banner before the blocking RPC.
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        try {
+            await this.orm.call(
+                "base.geocoder",
+                "leaflet_geolocate_missing",
+                [
+                    this.resModel,
+                    this.props.domain || [],
+                    this.fieldLatitude,
+                    this.fieldLongitude,
+                ],
+                {limit: this.props.limit || 80}
+            );
+            await this.loadRecords();
+            this.renderMarkers();
+        } catch (error) {
+            console.error("Error geolocating records:", error);
+        } finally {
+            this.state.locating = false;
+        }
+    }
+
+    /**
+     * Pan/zoom the map to a record and open its popup (used from the side list).
+     * @param {Object} record - The clicked record
+     */
+    focusRecord(record) {
+        if (!this.leafletMap) {
+            return;
+        }
+        const lat = record[this.fieldLatitude];
+        const lng = record[this.fieldLongitude];
+        if (!lat || !lng) {
+            return;
+        }
+        const latlng = L.latLng(lat, lng);
+        this.leafletMap.setView(latlng, Math.max(this.leafletMap.getZoom(), 14), {
+            animate: true,
+        });
+        const marker = this.markersById[record.id];
+        if (marker) {
+            // If inside a cluster, reveal it before opening the popup.
+            if (this.mainLayer && this.mainLayer.zoomToShowLayer) {
+                this.mainLayer.zoomToShowLayer(marker, () => marker.openPopup());
+            } else {
+                marker.openPopup();
+            }
+        }
+    }
+
+    /**
+     * Loads records from the server based on the provided domain and fields.
+     * @returns {Promise<void>}
+     */
+    async loadRecords() {
+        const fields = this.getFields();
+
+        try {
+            // Cargar registros usando searchRead
+            const records = await this.orm.searchRead(
+                this.resModel,
+                this.props.domain || [],
+                fields,
+                {
+                    limit: this.props.limit || 80,
+                    context: this.props.context || {},
+                }
+            );
+            this.records = records;
+        } catch (error) {
+            console.error("Error loading records:", error);
+            this.records = [];
+        }
+    }
+
+    /**
+     * Gathers the required fields for the map view.
+     * @returns {any[]}
+     */
+    getFields() {
+        const fields = new Set();
+
+        // Required fields
+        fields.add("id");
+        fields.add("display_name");
+        fields.add("write_date");
+
+        // Optional fields based on arch attributes
+        if (this.fieldLatitude) fields.add(this.fieldLatitude);
+        if (this.fieldLongitude) fields.add(this.fieldLongitude);
+        if (this.fieldTitle) fields.add(this.fieldTitle);
+        if (this.fieldAddress) fields.add(this.fieldAddress);
+        if (this.fieldDescription) fields.add(this.fieldDescription);
+        if (this.fieldMarkerIconImage) fields.add(this.fieldMarkerIconImage);
+
+        return Array.from(fields);
+    }
+
+    /**
+     * Initializes the default position of the map by calling the server method.
+     * @returns {Promise<void>}
+     */
+    async initDefaultPosition() {
+        const result = await this.orm.call(
+            "res.users",
+            "get_default_leaflet_position",
+            [this.props.resModel]
+        );
+        this.defaultLatLng = L.latLng(result.lat, result.lng);
+    }
+
+    /**
+     * Initializes the Leaflet map in the container.
+     */
+    initMap() {
+        const mapDiv = this.mapRef.el;
+        if (!mapDiv) {
+            console.error("Map container not found");
+            return;
+        }
+
+        this.leafletMap = L.map(mapDiv, {
+            zoomSnap: this.zoomSnap,
+        }).setView(this.defaultLatLng, this.defaultZoom);
+
+        L.tileLayer(this.leafletTileUrl, {
+            maxZoom: this.maxZoom,
+            attribution: this.leafletCopyright,
+        }).addTo(this.leafletMap);
+    }
+
+    /**
+     * Renders the markers on the map based on the loaded records.
+     */
+    renderMarkers() {
+        if (!this.leafletMap) {
+            console.warn("Map not initialized yet");
+            return;
+        }
+
+        if (this.mainLayer) {
+            this.leafletMap.removeLayer(this.mainLayer);
+        }
+
+        this.mainLayer = L.markerClusterGroup();
+        this.markersById = {};
+        for (const record of this.records) {
+            const marker = this.prepareMarker(record);
+            if (marker) {
+                this.mainLayer.addLayer(marker);
+                this.markersById[record.id] = marker;
+            }
+        }
+        this.leafletMap.addLayer(this.mainLayer);
+
+        const bounds = this.mainLayer.getBounds();
+        if (bounds.isValid()) {
+            // Adapt the map's position based on the map's points
+            this.leafletMap.fitBounds(bounds.pad(0.1));
+        }
+    }
+
+    /**
+     * Prepares a Leaflet marker for the given record.
+     * @param {Object} record - The record object containing marker data
+     * @returns {*}
+     */
+    prepareMarker(record) {
+        const lat = record[this.fieldLatitude];
+        const lng = record[this.fieldLongitude];
+        let marker = null;
+        if (!lat || !lng) {
+            console.debug(`Record ${record.id} has no coordinates`);
+            return;
+        }
+
+        const latlng = L.latLng(lat, lng);
+        if (latlng.lat !== 0 && latlng.lng !== 0) {
+            const markerOptions = this.prepareMarkerOptions(record);
+
+            marker = L.marker(latlng, markerOptions);
+            const popup = L.popup().setContent(this.preparePopUpData(record));
+
+            marker.bindPopup(popup).on("popupopen", (ev) => {
+                const popupEl = ev.popup.getElement();
+                const openBtn = popupEl && popupEl.querySelector(".o_leaflet_open");
+                if (openBtn) {
+                    openBtn.addEventListener("click", (clickEv) => {
+                        clickEv.preventDefault();
+                        this.onClickLeafletPopup(record);
+                    });
+                }
+                const navigateBtn = popupEl && popupEl.querySelector(".o_leaflet_navigate");
+                if (navigateBtn) {
+                    navigateBtn.addEventListener("click", (clickEv) => {
+                        clickEv.preventDefault();
+                        this.onClickLeafletNavigate(record);
+                    });
+                }
+            });
+
+            return marker;
+        }
+    }
+
+    /**
+     * Prepares the Leaflet icon for the marker using the image field.
+     * @param {Object} record - The record object containing marker data
+     * @returns {*}
+     */
+    prepareMarkerIcon(record) {
+        const lastUpdate = record.write_date || new Date().toISOString();
+        const unique = lastUpdate.replace(/[^0-9]/g, "");
+        const iconUrl = `/web/image?model=${this.resModel}&id=${record.id}&field=${this.fieldMarkerIconImage}&unique=${unique}`;
+
+        return L.icon({
+            iconUrl: iconUrl,
+            className: "leaflet_marker_icon",
+            iconSize: [this.markerIconSizeX, this.markerIconSizeY],
+            popupAnchor: [this.markerPopupAnchorX, this.markerPopupAnchorY],
+        });
+    }
+
+    /**
+     * Prepares the options for the leaflet marker.
+     * @param {Object} record - The record object containing marker data
+     * @returns {{riseOnHover: Boolean, alt: (*|string), title: (*|string)}}
+     */
+    prepareMarkerOptions(record) {
+        const title = record[this.fieldTitle] || "";
+        const result = {
+            title: title,
+            alt: title,
+            riseOnHover: true,
+        };
+
+        if (this.fieldMarkerIconImage) {
+            result.icon = this.prepareMarkerIcon(record);
+        }
+
+        return result;
+    }
+
+    /**
+     * Escapes a plain text value for safe insertion into popup HTML.
+     * @param {*} text - The value to escape
+     * @returns {String}
+     */
+    escapeHtml(text) {
+        const div = document.createElement("div");
+        div.textContent = String(text);
+        return div.innerHTML;
+    }
+
+    /**
+     * Prepares the HTML content for the leaflet popup.
+     * @param {Object} record - The record object containing marker data
+     * @returns {String}
+     */
+    preparePopUpData(record) {
+        const title = record[this.fieldTitle] || "";
+        const address = (this.fieldAddress && record[this.fieldAddress]) || "";
+        const description =
+            (this.fieldDescription && record[this.fieldDescription]) || "";
+
+        return `
+            <div class="o_leaflet_popup">
+                <div><b>${this.escapeHtml(title)}</b></div>
+                ${address ? `<div>${this.escapeHtml(address)}</div>` : ""}
+                ${
+                    description
+                        ? `<div class="o_leaflet_popup_description"
+                            style="max-height: 150px; overflow-y: auto;"
+                        >${description}</div>`
+                        : ""
+                }
+                <div class="d-flex gap-2 mt-2">
+                    <button
+                        type="button"
+                        class="btn btn-primary btn-sm o_leaflet_open"
+                    >Open</button>
+                    <button
+                        type="button"
+                        class="btn btn-secondary btn-sm o_leaflet_navigate"
+                    >Navigate to</button>
+                </div>
+            </div>
+        `;
+    }
+
+    /**
+     * Handles click on the leaflet popup to open the record form view.
+     * @param {Object} record - The record object containing marker data
+     */
+    onClickLeafletPopup(record) {
+        this.action.doAction({
+            type: "ir.actions.act_window",
+            res_model: this.resModel,
+            res_id: record.id,
+            views: [[false, "form"]],
+            target: "current",
+        });
+    }
+
+    /**
+     * Builds a Google Maps directions URL for the record's address.
+     * @param {Object} record - The record object containing marker data
+     * @returns {String}
+     */
+    buildNavigationUrl(record) {
+        const address = (this.fieldAddress && record[this.fieldAddress]) || "";
+        const destination = encodeURIComponent(String(address).trim());
+        return `https://www.google.com/maps/dir/?api=1&destination=${destination}`;
+    }
+
+    /**
+     * Opens Google Maps directions in a new tab for the record address.
+     * @param {Object} record - The record object containing marker data
+     */
+    onClickLeafletNavigate(record) {
+        const url = this.buildNavigationUrl(record);
+        window.open(url, "_blank", "noopener,noreferrer");
+    }
+}
