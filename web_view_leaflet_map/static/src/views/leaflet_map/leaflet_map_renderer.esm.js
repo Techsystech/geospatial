@@ -1,7 +1,8 @@
 import {session} from "@web/session";
 import {useService} from "@web/core/utils/hooks";
+import {useSortable} from "@web/core/utils/sortable_owl";
 
-/* global L, console, document */
+/* global L, console, document, window */
 
 const {Component, onWillStart, onMounted, onPatched, useEffect, useRef, useState} = owl;
 
@@ -36,7 +37,8 @@ export class MapRenderer extends Component {
         this.fieldMarkerIconImage = archAttrs.field_marker_icon_image?.value;
         this.fieldListTitle = archAttrs.field_list_title?.value || this.fieldTitle;
         this.showList = archAttrs.show_list?.value === "true";
-        this.autoGeolocate = archAttrs.auto_geolocate?.value !== "false";
+        const listDraggableAttr = archAttrs.list_draggable?.value;
+        this.listDraggable = this.showList && (listDraggableAttr === undefined || listDraggableAttr !== "false");
 
         this.state = useState({
             locating: false,
@@ -54,6 +56,22 @@ export class MapRenderer extends Component {
         this.records = [];
         this.markersById = {};
         this.geolocatedOnce = false;
+        this.listRef = useRef("listContainer");
+
+        if (this.showList && this.listDraggable) {
+            useSortable({
+                ref: this.listRef,
+                elements: ".o_leaflet_list_item",
+                handle: ".o_leaflet_list_handle",
+                cursor: "grabbing",
+                applyChangeOnDrop: false,
+                onDrop: ({element, previous}) => {
+                    const recordId = Number(element.dataset.id);
+                    const refId = previous ? Number(previous.dataset.id) : null;
+                    this.reorderRecords(recordId, refId);
+                },
+            });
+        }
 
         onWillStart(async () => {
             await this.initDefaultPosition();
@@ -151,6 +169,27 @@ export class MapRenderer extends Component {
                 marker.openPopup();
             }
         }
+    }
+
+    /**
+     * Reorders the internal records array after a drag-and-drop move.
+     * @param {Number} movedId - The id of the dragged record.
+     * @param {Number|null} refId - The id of the record after which it was dropped.
+     */
+    reorderRecords(movedId, refId) {
+        const fromIndex = this.records.findIndex((r) => r.id === movedId);
+        if (fromIndex === -1) {
+            return;
+        }
+        const movedRecord = this.records[fromIndex];
+        this.records.splice(fromIndex, 1);
+        let toIndex = 0;
+        if (refId) {
+            const refIndex = this.records.findIndex((r) => r.id === refId);
+            toIndex = refIndex === -1 ? this.records.length : refIndex + 1;
+        }
+        this.records.splice(toIndex, 0, movedRecord);
+        this.renderMarkers();
     }
 
     /**
@@ -423,11 +462,48 @@ export class MapRenderer extends Component {
     }
 
     /**
+     * Builds a Google Maps directions URL for all visible records.
+     * First record becomes the destination, remaining records become waypoints.
+     * @returns {String|null}
+     */
+    buildAllNavigationUrl() {
+        if (!this.fieldAddress || !this.records.length) {
+            return null;
+        }
+        const addresses = this.records
+            .map((r) => String(r[this.fieldAddress] || "").trim())
+            .filter((a) => a);
+        if (!addresses.length) {
+            return null;
+        }
+        const destination = encodeURIComponent(addresses[0]);
+        let url = `https://www.google.com/maps/dir/?api=1&destination=${destination}`;
+        if (addresses.length > 1) {
+            const waypoints = addresses
+                .slice(1)
+                .map(encodeURIComponent)
+                .join("|");
+            url += `&waypoints=${waypoints}`;
+        }
+        return url;
+    }
+
+    /**
      * Opens Google Maps directions in a new tab for the record address.
      * @param {Object} record - The record object containing marker data
      */
     onClickLeafletNavigate(record) {
         const url = this.buildNavigationUrl(record);
         window.open(url, "_blank", "noopener,noreferrer");
+    }
+
+    /**
+     * Opens Google Maps directions in a new tab for all visible records.
+     */
+    onClickNavigateAll() {
+        const url = this.buildAllNavigationUrl();
+        if (url) {
+            window.open(url, "_blank", "noopener,noreferrer");
+        }
     }
 }

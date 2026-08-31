@@ -13,26 +13,51 @@
             <div class="o_leaflet_main_container d-flex flex-grow-1 overflow-hidden">
                 <div
                     t-if="showList"
-                    class="o_leaflet_list border-end overflow-auto"
+                    class="o_leaflet_list border-end overflow-hidden d-flex flex-column"
                 >
                     <div
-                        t-foreach="records"
-                        t-as="record"
-                        t-key="record.id"
-                        class="o_leaflet_list_item p-2 border-bottom"
-                        t-on-click="() => this.focusRecord(record)"
+                        t-if="records.length and fieldAddress"
+                        class="p-2 border-bottom bg-light"
                     >
-                        <div class="fw-bold" t-esc="record[fieldListTitle] || record.display_name" />
-                        <div
-                            t-if="fieldAddress and record[fieldAddress]"
-                            class="text-muted small"
-                            t-esc="record[fieldAddress]"
-                        />
+                        <button
+                            type="button"
+                            class="btn btn-secondary btn-sm w-100 o_leaflet_navigate_all"
+                            t-on-click="() => this.onClickNavigateAll()"
+                        >
+                            <i class="fa fa-map-marker me-1" /> Open in Google Maps
+                        </button>
                     </div>
-                    <div
-                        t-if="!records.length"
-                        class="text-muted p-3 small"
-                    >No records to display.</div>
+                    <div t-ref="listContainer" class="overflow-auto flex-grow-1">
+                        <div
+                            t-foreach="records"
+                            t-as="record"
+                            t-key="record.id"
+                            class="o_leaflet_list_item p-2 border-bottom"
+                            t-att-data-id="record.id"
+                            t-att-class="{ 'o_leaflet_list_item_draggable': listDraggable }"
+                            t-on-click="() => this.focusRecord(record)"
+                        >
+                            <div class="d-flex align-items-start gap-2">
+                                <span
+                                    t-if="listDraggable"
+                                    class="o_leaflet_list_handle fa fa-bars text-muted"
+                                    title="Drag to reorder"
+                                />
+                                <div class="flex-grow-1">
+                                    <div class="fw-bold" t-esc="record[fieldListTitle] || record.display_name" />
+                                    <div
+                                        t-if="fieldAddress and record[fieldAddress]"
+                                        class="text-muted small"
+                                        t-esc="record[fieldAddress]"
+                                    />
+                                </div>
+                            </div>
+                        </div>
+                        <div
+                            t-if="!records.length"
+                            class="text-muted p-3 small"
+                        >No records to display.</div>
+                    </div>
                 </div>
                 <div t-ref="mapContainer" class="o_leaflet_map_container flex-grow-1 h-100" />
             </div>

@@ -29,6 +29,27 @@
     background-color: #f0f0f0;
 }
 
+.o_leaflet_list_item_draggable {
+    cursor: grab;
+}
+
+.o_leaflet_list_handle {
+    cursor: grab;
+    display: inline-block;
+    padding: 0.25rem 0.5rem;
+    margin: -0.25rem 0;
+    border-radius: 0.25rem;
+}
+
+.o_leaflet_list_handle:hover {
+    background-color: #e9ecef;
+    color: #495057;
+}
+
+.o_leaflet_list_handle:active {
+    cursor: grabbing;
+}
+
 .o_leaflet_map_container {
     height: 100%;
     width: 100%;
