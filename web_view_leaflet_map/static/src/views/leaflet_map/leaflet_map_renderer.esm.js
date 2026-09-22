@@ -456,7 +456,7 @@ export class MapRenderer extends Component {
      */
     buildNavigationUrl(record) {
         const address = (this.fieldAddress && record[this.fieldAddress]) || "";
-        const destination = encodeURIComponent(String(address).trim());
+        const destination = encodeURIComponent(String(address).trim().replace(/\s+/g, " "));
         return `https://www.google.com/maps/dir/?api=1&destination=${destination}`;
     }
 
@@ -470,7 +470,11 @@ export class MapRenderer extends Component {
             return false;
         }
         const addresses = this.state.records
-            .map((r) => String(r[this.fieldAddress] || "").trim())
+            .map((r) =>
+                String(r[this.fieldAddress] || "")
+                    .trim()
+                    .replace(/\s+/g, " ")
+            )
             .filter((a) => a);
         if (!addresses.length) {
             return null;
